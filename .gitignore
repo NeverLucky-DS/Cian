@@ -12,5 +12,6 @@ wheels/
 # Project
 .env
 photos/
+data/cian.sql.gz
 dumps/*.json
 dumps/*.html

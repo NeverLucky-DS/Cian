@@ -14,16 +14,23 @@ from db.models import Offer, OfferPhoto, ScrapeRun
 
 
 PHOTOS_DIR = Path("photos")
-MAX_SIDE = 1600         # ограничение длинной стороны в пикселях
-WEBP_QUALITY = 80
+MAX_SIDE = 1200         # ограничение длинной стороны в пикселях
+WEBP_QUALITY = 78
 CONCURRENCY = 6         # сколько фото качаем параллельно
 
 
-# скачивает байты картинки
-async def download_bytes(client, url):
-    r = await client.get(url, timeout=30)
-    r.raise_for_status()
-    return r.content
+# скачивает байты картинки с ретраями
+async def download_bytes(client, url, attempts=3):
+    last_err = None
+    for i in range(attempts):
+        try:
+            r = await client.get(url, timeout=30)
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            last_err = e
+            await asyncio.sleep(1.0 * (i + 1))
+    raise last_err
 
 
 # конвертирует исходные байты в webp с ресайзом, возвращает (bytes, w, h)

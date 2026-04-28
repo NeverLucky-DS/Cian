@@ -1,12 +1,13 @@
 import time
 from datetime import datetime
 from playwright.sync_api import sync_playwright
+from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db.db import SessionLocal
 from db.models import Offer, OfferPhoto, ScrapeRun
 from parser.state import get_listing_offers
-from parser.extract import offer_to_row, extract_seller, extract_photos
+from parser.extract import offer_to_row, extract_seller, extract_photos, MAX_PHOTOS
 
 
 # берет одну страницу листинга и возвращает ее html после прогрузки
@@ -54,6 +55,13 @@ def upsert_offer(session, offer_dict, photos_list):
             set_={"url_original": ph["url_original"], "is_layout": ph["is_layout"]},
         )
         session.execute(ins)
+    # подчищаем строки сверх лимита (от прежних запусков, когда лимита не было)
+    session.execute(
+        delete(OfferPhoto).where(
+            OfferPhoto.offer_id == offer_id,
+            OfferPhoto.position >= MAX_PHOTOS,
+        )
+    )
     return offer_id
 
 

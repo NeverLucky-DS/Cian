@@ -192,16 +192,22 @@ def extract_seller(offer_data_or_listing_offer):
     )
 
 
-# из offer вытащить список фото в виде [{position, url, is_layout}]
+# сколько фото берем с одного объявления
+MAX_PHOTOS = 3
+
+
+# из offer вытащить первые MAX_PHOTOS фото в виде [{position, url, is_layout}]
 def extract_photos(offer):
     photos = offer.get("photos") or []
     out = []
     for i, p in enumerate(photos):
+        if len(out) >= MAX_PHOTOS:
+            break
         url = p.get("fullUrl") or p.get("thumbnailUrl") or p.get("miniUrl")
         if not url:
             continue
         out.append({
-            "position": i,
+            "position": len(out),
             "url_original": url,
             "is_layout": bool(p.get("isLayout")),
         })

@@ -2,13 +2,13 @@ import time
 import random
 from datetime import datetime
 from playwright.sync_api import sync_playwright
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db.db import SessionLocal
 from db.models import Offer, OfferPhoto, ScrapeRun
 from parser.state import get_offer_data
-from parser.extract import offer_to_row, extract_seller, extract_photos
+from parser.extract import offer_to_row, extract_seller, extract_photos, MAX_PHOTOS
 
 
 # заходит на карточку и возвращает html
@@ -47,7 +47,7 @@ def update_offer_detail(session, offer_data):
     res = session.execute(stmt).first()
     offer_id = res.id
 
-    # обновляем фото (полный список с детальной страницы достовернее)
+    # обновляем фото (с детальной страницы свежее)
     photos = extract_photos(offer)
     for ph in photos:
         ins = pg_insert(OfferPhoto).values(
@@ -60,7 +60,33 @@ def update_offer_detail(session, offer_data):
             set_={"url_original": ph["url_original"], "is_layout": ph["is_layout"]},
         )
         session.execute(ins)
+    # подчищаем хвосты от прежних запусков
+    session.execute(
+        delete(OfferPhoto).where(
+            OfferPhoto.offer_id == offer_id,
+            OfferPhoto.position >= MAX_PHOTOS,
+        )
+    )
     return offer_id
+
+
+# вытаскиваем offerData с попыткой ретрая (если не успело прогрузиться)
+def fetch_offer_data_with_retry(page, url, max_attempts=2):
+    for attempt in range(1, max_attempts + 1):
+        if attempt == 1:
+            html = fetch_offer_html(page, url)
+        else:
+            # ретрай: перезагружаем страницу и ждем чуть подольше
+            try:
+                page.reload(wait_until="domcontentloaded", timeout=60000)
+            except Exception:
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            time.sleep(4)
+            html = page.content()
+        od = get_offer_data(html)
+        if od and od.get("offer", {}).get("photos"):
+            return od
+    return None
 
 
 # главная функция фазы 2: добирает детали для всех еще не обработанных карточек
@@ -88,10 +114,9 @@ def run(limit=None, headless=False, sleep_min=2.0, sleep_max=5.0):
             for i, t in enumerate(targets, 1):
                 print(f"[offer] {i}/{len(targets)} cian_id={t.cian_id}")
                 try:
-                    html = fetch_offer_html(page, t.url)
-                    od = get_offer_data(html)
+                    od = fetch_offer_data_with_retry(page, t.url, max_attempts=2)
                     if not od:
-                        print("  no offerData found")
+                        print("  no offerData (after retry)")
                         run_log.errors += 1
                         continue
                     update_offer_detail(session, od)

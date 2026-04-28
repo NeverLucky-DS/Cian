@@ -12,4 +12,5 @@ dependencies = [
     "pillow>=10.4",
     "python-dotenv>=1.0",
     "flask>=3.0",
+    "dvc>=3.50",
 ]

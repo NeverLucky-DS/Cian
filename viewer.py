@@ -1,3 +1,6 @@
+import html as html_lib
+import re
+
 from flask import Flask, render_template_string, send_from_directory, request, abort
 from sqlalchemy import select, desc, func, or_
 
@@ -7,6 +10,26 @@ from db.models import Offer, OfferPhoto
 
 app = Flask(__name__)
 PER_PAGE = 30
+
+
+# превращает текст в html: абзацы по двойному переносу, маркированные списки по строкам с буллитом
+def format_desc(text):
+    if not text:
+        return "—"
+    parts = re.split(r"\n\s*\n", text.strip())
+    out = []
+    for part in parts:
+        lines = [l.rstrip() for l in part.split("\n") if l.strip()]
+        if lines and all(re.match(r"^[\u2022•\-\*]\s+", l) for l in lines):
+            items = "".join(
+                "<li>" + html_lib.escape(re.sub(r"^[\u2022•\-\*]\s+", "", l)) + "</li>"
+                for l in lines
+            )
+            out.append("<ul>" + items + "</ul>")
+        else:
+            joined = "<br>".join(html_lib.escape(l) for l in lines)
+            out.append("<p>" + joined + "</p>")
+    return "".join(out)
 
 
 # главная: список объявлений с фильтрами и пагинацией
@@ -116,7 +139,10 @@ h1 { margin: 8px 0; font-size: 22px; }
 .info { background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:14px; }
 .info dt { color:#666; font-size:12px; margin-top:8px; }
 .info dd { margin: 0; font-size:14px; }
-.desc { background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:14px; margin-top:14px; white-space:pre-wrap; }
+.desc { background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:14px; margin-top:14px; }
+.desc p { margin: 0 0 10px 0; line-height:1.45; }
+.desc ul { margin: 6px 0 10px 22px; padding:0; }
+.desc li { margin: 2px 0; line-height:1.4; }
 .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9; align-items:center; justify-content:center; }
 .modal img { max-width:95vw; max-height:95vh; }
 .modal.on { display:flex; }
@@ -137,7 +163,7 @@ h1 { margin: 8px 0; font-size: 22px; }
         <img src="/photos/{{ o.cian_id }}/{{ ph.position }}.webp" loading="lazy" onclick="document.getElementById('m').classList.add('on'); document.getElementById('mi').src=this.src;">
       {% endfor %}
     </div>
-    <div class="desc">{{ o.description or '—' }}</div>
+    <div class="desc">{{ format_desc(o.description) | safe }}</div>
   </div>
 
   <div class="info">
@@ -259,7 +285,7 @@ def detail(cian_id):
             .where(OfferPhoto.offer_id == o.id, OfferPhoto.path_local.isnot(None))
             .order_by(OfferPhoto.position)
         ))
-    return render_template_string(DETAIL_HTML, o=o, photos=photos)
+    return render_template_string(DETAIL_HTML, o=o, photos=photos, format_desc=format_desc)
 
 
 # раздаем локальные webp-фото
