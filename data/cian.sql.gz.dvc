@@ -1,0 +1,5 @@
+outs:
+- md5: c820bc80a6c731e2327d420adcb3336d
+  size: 205171
+  hash: md5
+  path: cian.sql.gz

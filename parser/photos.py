@@ -96,15 +96,22 @@ async def _run_async(limit=None):
         if limit:
             q = q.limit(limit)
         rows = session.execute(q).all()
-        print(f"[photos] to download: {len(rows)}")
+        total = len(rows)
+        print(f"[photos] to download: {total}")
+        print(f"[photos] target dir: {PHOTOS_DIR.resolve()}")
+        if total == 0:
+            print("[photos] nothing to do")
 
         sem = asyncio.Semaphore(CONCURRENCY)
+        done_cnt = 0
         async with httpx.AsyncClient(headers={"User-Agent": "Mozilla/5.0"}) as client:
             tasks = [process_one(client, sem, r.OfferPhoto, r.cian_id) for r in rows]
             for fut in asyncio.as_completed(tasks):
                 photo_id, info, err = await fut
+                done_cnt += 1
                 if err:
                     run_log.errors += 1
+                    print(f"[photos] {done_cnt}/{total} ERROR id={photo_id}: {err}")
                     continue
                 session.execute(
                     update(OfferPhoto)
@@ -112,7 +119,12 @@ async def _run_async(limit=None):
                     .values(downloaded_at=datetime.utcnow(), **info)
                 )
                 run_log.offers_seen += 1
+                # коммитим почаще чтобы пользователь видел прогресс в БД и логе
+                if done_cnt % 10 == 0:
+                    session.commit()
+                    print(f"[photos] {done_cnt}/{total} ok")
             session.commit()
+            print(f"[photos] {done_cnt}/{total} ok (final)")
 
         # отметим offers, у которых все фото скачаны
         session.execute(
