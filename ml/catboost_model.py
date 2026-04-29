@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from catboost import CatBoostRegressor, Pool
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from data.exporter import DEFAULT_ML_DATASET, build_catboost_dataset, export_offers, save_catboost_dataset
 
@@ -47,7 +47,9 @@ def train(model_path: str | Path = MODEL_PATH, dataset_path: str | Path = DEFAUL
 
     preds = model.predict(val_pool)
     mape = mean_absolute_percentage_error(y_val, preds)
+    r2 = r2_score(y_val, preds)
     print(f"[catboost] validation MAPE={mape:.3f}")
+    print(f"[catboost] validation R²={r2:.3f}")
 
     model_path = Path(model_path)
     model_path.parent.mkdir(parents=True, exist_ok=True)
