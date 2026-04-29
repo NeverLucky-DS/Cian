@@ -1,6 +1,10 @@
 import html as html_lib
+import json
 import re
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 from flask import Flask, render_template_string, send_from_directory, request, abort
 from sqlalchemy import select, desc, func, or_
 
@@ -10,6 +14,90 @@ from db.models import Offer, OfferPhoto
 
 app = Flask(__name__)
 PER_PAGE = 30
+LUXURY_FILE = Path("data/ml/luxury_scores.parquet")
+PRED_FILE = Path("data/ml/predictions.csv")
+
+
+def _read_table(path: Path) -> pd.DataFrame:
+    if path.exists():
+        if path.suffix == ".parquet":
+            return pd.read_parquet(path)
+        return pd.read_csv(path)
+    csv_path = path.with_suffix(".csv")
+    if csv_path.exists():
+        return pd.read_csv(csv_path)
+    return pd.DataFrame()
+
+
+def _load_luxury_dict() -> dict[int, dict]:
+    df = _read_table(LUXURY_FILE)
+    if df.empty:
+        return {}
+    df = df.fillna({"luxury_description": 50, "luxury_photo": 50, "luxury_reason": ""})
+    return {
+        int(row.cian_id): {
+            "luxury_description": int(row.luxury_description),
+            "luxury_photo": int(row.luxury_photo),
+            "luxury_reason": row.luxury_reason,
+        }
+        for row in df.itertuples()
+    }
+
+
+def _get_luxury_distribution() -> dict:
+    df = _read_table(LUXURY_FILE)
+    if df.empty:
+        return {}
+    desc_scores = df["luxury_description"].tolist()
+    hist, bins = np.histogram(desc_scores, bins=20, range=(35, 100))
+    return {
+        "bins": bins.tolist(),
+        "counts": hist.tolist(),
+        "mean": float(df["luxury_description"].mean()),
+        "std": float(df["luxury_description"].std()),
+    }
+
+
+def _load_pred_dict() -> dict[int, float]:
+    df = _read_table(PRED_FILE)
+    if df.empty:
+        return {}
+    return {int(row.cian_id): float(row.pred_price) for row in df.itertuples()}
+
+
+LUXURY_DATA = _load_luxury_dict()
+PREDICTIONS_DATA = _load_pred_dict()
+
+
+def _attach_scores(o):
+    lux = LUXURY_DATA.get(o.cian_id)
+    if lux:
+        o.luxury_description = lux["luxury_description"]
+        o.luxury_photo = lux["luxury_photo"]
+        o.luxury_reason = lux["luxury_reason"]
+    else:
+        o.luxury_description = None
+        o.luxury_photo = None
+        o.luxury_reason = ""
+
+    pred = PREDICTIONS_DATA.get(o.cian_id)
+    if pred is not None and o.price_rub:
+        o.pred_price = int(pred)
+        diff = o.price_rub - o.pred_price
+        if diff > 0:
+            o.discount_amount = diff
+            o.discount_amount_fmt = f"{diff:,}".replace(",", " ")
+            o.discount_pct = round(diff / o.price_rub * 100, 1)
+        else:
+            o.discount_amount = None
+            o.discount_amount_fmt = None
+            o.discount_pct = None
+    else:
+        o.pred_price = None
+        o.discount_amount = None
+        o.discount_amount_fmt = None
+        o.discount_pct = None
+    return o
 
 
 # превращает текст в html: абзацы по двойному переносу, маркированные списки по строкам с буллитом
@@ -53,6 +141,9 @@ h1 { margin: 0 0 12px 0; font-size: 20px; }
 .price { font-size:17px; font-weight:600; }
 .meta { font-size:13px; color:#444; }
 .addr { font-size:12px; color:#666; }
+.deal { font-size:13px; color:#0a7cff; font-weight:600; }
+.lux { font-size:12px; color:#555; display:flex; gap:6px; flex-wrap:wrap; }
+.lux span { background:#eef3ff; padding:2px 6px; border-radius:4px; }
 .tags { font-size:11px; color:#888; margin-top:4px; }
 .card a { color:inherit; text-decoration:none; }
 .card a.title-link:hover { color:#0a7cff; }
@@ -75,7 +166,7 @@ h1 { margin: 0 0 12px 0; font-size: 20px; }
     <option value="0" {% if nb == '0' %}selected{% endif %}>только вторичка</option>
   </select>
   <select name="sort">
-    {% for v, label in [('new','новые'),('price_asc','цена ↑'),('price_desc','цена ↓'),('m2_asc','м2 ↑')] %}
+    {% for v, label in [('deal','лучшая скидка'),('new','новые'),('price_asc','цена ↑'),('price_desc','цена ↓'),('m2_asc','м2 ↑')] %}
       <option value="{{ v }}" {% if sort == v %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -84,11 +175,33 @@ h1 { margin: 0 0 12px 0; font-size: 20px; }
 
 <div class="stats">всего в БД: {{ total }} | страница {{ page }}/{{ pages }} | показано {{ offers|length }}</div>
 
+<div class="chart-container">
+  <canvas id="luxuryChart" width="800" height="200"></canvas>
+</div>
+<script>
+const bins = {{ lux_dist.bins|tojson }};
+const counts = {{ lux_dist.counts|tojson }};
+const canvas = document.getElementById('luxuryChart');
+const ctx = canvas.getContext('2d');
+const barWidth = (canvas.width - 40) / (bins.length - 1);
+const maxCount = Math.max(...counts);
+ctx.fillStyle = '#0a7cff';
+for (let i = 0; i < counts.length; i++) {
+  const height = (counts[i] / maxCount) * (canvas.height - 40);
+  const x = 20 + i * barWidth;
+  const y = canvas.height - 20 - height;
+  ctx.fillRect(x, y, barWidth - 2, height);
+}
+ctx.fillStyle = '#666';
+ctx.font = '11px Arial';
+ctx.fillText('Распределение luxury-оценок (μ=' + {{ lux_dist.mean|round(1) }} + ', σ=' + {{ lux_dist.std|round(1) }} + ')', 20, 15);
+</script>
+
 <div class="grid">
 {% for o in offers %}
   <div class="card">
     <a class="title-link" href="/offer/{{ o.cian_id }}">
-      {% if o.cover %}
+      {% if o.cover is not none %}
         <img src="/photos/{{ o.cian_id }}/{{ o.cover }}.webp" loading="lazy">
       {% else %}
         <img alt="нет фото">
@@ -101,11 +214,20 @@ h1 { margin: 0 0 12px 0; font-size: 20px; }
         </div>
         <div class="addr">{{ o.address_full or '—' }}</div>
         <div class="addr">{% if o.metro_name %}м. {{ o.metro_name }}{% if o.metro_minutes %} · {{ o.metro_minutes }} мин{% endif %}{% endif %}</div>
+        {% if o.pred_price %}
+        <div class="deal">Модель {{ "{:,}".format(o.pred_price).replace(',', ' ') }} ₽ (−{{ o.discount_pct }}%)</div>
+        {% endif %}
         <div class="tags">
           {% if o.is_newbuilding %}<span class="badge nb">новостр.</span>{% endif %}
           {% if o.jk_name %}<span class="badge">{{ o.jk_name }}</span>{% endif %}
           {% if o.decoration %}<span class="badge">{{ o.decoration }}</span>{% endif %}
         </div>
+        {% if o.luxury_description or o.luxury_photo %}
+        <div class="lux">
+          <span>Lux текст {{ o.luxury_description or '—' }}</span>
+          <span>Lux фото {{ o.luxury_photo or '—' }}</span>
+        </div>
+        {% endif %}
       </div>
     </a>
   </div>
@@ -181,6 +303,9 @@ h1 { margin: 8px 0; font-size: 22px; }
       <dt>адрес</dt><dd>{{ o.address_full or '—' }}</dd>
       <dt>координаты</dt><dd>{{ o.lat }}, {{ o.lon }}</dd>
       {% if o.metro_name %}<dt>метро</dt><dd>{{ o.metro_name }}{% if o.metro_minutes %} · {{ o.metro_minutes }} мин ({{ o.metro_travel_type }}){% endif %}</dd>{% endif %}
+      {% if o.pred_price %}<dt>модель vs факт</dt><dd>{{ "{:,}".format(o.pred_price).replace(',', ' ') }} ₽ (−{{ o.discount_pct }}% / −{{ o.discount_amount_fmt or '0' }} ₽)</dd>{% endif %}
+      {% if o.luxury_description %}<dt>роскошность (описание)</dt><dd>{{ o.luxury_description }}/100{% if o.luxury_reason %} · {{ o.luxury_reason }}{% endif %}</dd>{% endif %}
+      {% if o.luxury_photo %}<dt>роскошность (фото)</dt><dd>{{ o.luxury_photo }}/100</dd>{% endif %}
       <dt>продавец</dt><dd>{{ o.seller_name or '—' }} ({{ o.seller_type or '—' }})</dd>
       {% if o.seller_phones %}<dt>телефоны</dt><dd>{% for p in o.seller_phones %}+{{ p.get('countryCode','') }}{{ p.get('number','') }}<br>{% endfor %}</dd>{% endif %}
       <dt>статус</dt><dd>{{ o.status }}</dd>
@@ -203,7 +328,7 @@ def index():
     rooms = request.args.get("rooms", "").strip()
     price_max = request.args.get("price_max", "").strip()
     nb = request.args.get("nb", "").strip()
-    sort = request.args.get("sort", "new").strip()
+    sort = request.args.get("sort", "deal").strip()
     page = max(1, int(request.args.get("page", 1)))
 
     with SessionLocal() as s:
@@ -238,18 +363,45 @@ def index():
         total = s.scalar(select(func.count()).select_from(stmt.subquery()))
         pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
         page = min(page, pages)
-        offers = list(s.scalars(stmt.offset((page - 1) * PER_PAGE).limit(PER_PAGE)))
 
-        # для каждого находим первую фотку (которая скачана)
+        if sort == "deal":
+            offers = list(s.scalars(stmt))
+        else:
+            offers = list(s.scalars(stmt.offset((page - 1) * PER_PAGE).limit(PER_PAGE)))
+
+        offers = [_attach_scores(o) for o in offers]
+        if sort == "deal":
+            offers.sort(key=lambda x: x.discount_pct if x.discount_pct is not None else -999, reverse=True)
+            start = (page - 1) * PER_PAGE
+            offers = offers[start:start + PER_PAGE]
+
+        # для каждого находим обложку: предпочтительно не-планировка, иначе любая
         ids = [o.id for o in offers]
         cover = {}
         if ids:
-            rows = s.execute(
+            # сначала ищем первое скачанное фото где is_layout=false
+            non_layout = s.execute(
                 select(OfferPhoto.offer_id, func.min(OfferPhoto.position))
-                .where(OfferPhoto.offer_id.in_(ids), OfferPhoto.path_local.isnot(None))
+                .where(
+                    OfferPhoto.offer_id.in_(ids),
+                    OfferPhoto.path_local.isnot(None),
+                    OfferPhoto.is_layout.is_(False),
+                )
                 .group_by(OfferPhoto.offer_id)
             ).all()
-            cover = {r[0]: r[1] for r in rows}
+            cover = {r[0]: r[1] for r in non_layout}
+            # для тех у кого только планировки — берем хоть какую
+            missing = [i for i in ids if i not in cover]
+            if missing:
+                fallback = s.execute(
+                    select(OfferPhoto.offer_id, func.min(OfferPhoto.position))
+                    .where(
+                        OfferPhoto.offer_id.in_(missing),
+                        OfferPhoto.path_local.isnot(None),
+                    )
+                    .group_by(OfferPhoto.offer_id)
+                ).all()
+                cover.update({r[0]: r[1] for r in fallback})
 
         # навешиваем cover как атрибут
         view_offers = []
@@ -266,10 +418,12 @@ def index():
         params.update(override)
         return "&".join(f"{k}={v}" for k, v in params.items() if v not in (None, ""))
 
+    lux_dist = _get_luxury_distribution()
     return render_template_string(
         LIST_HTML,
         offers=view_offers, total=total, page=page, pages=pages,
         q=q, rooms=rooms, price_max=price_max, nb=nb, sort=sort, qs=qs,
+        lux_dist=lux_dist,
     )
 
 
@@ -280,6 +434,7 @@ def detail(cian_id):
         o = s.scalar(select(Offer).where(Offer.cian_id == cian_id))
         if not o:
             abort(404)
+        _attach_scores(o)
         photos = list(s.scalars(
             select(OfferPhoto)
             .where(OfferPhoto.offer_id == o.id, OfferPhoto.path_local.isnot(None))

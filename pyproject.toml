@@ -13,4 +13,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "flask>=3.0",
     "dvc>=3.50",
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    "catboost>=1.2",
+    "scikit-learn>=1.5",
 ]

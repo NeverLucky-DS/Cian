@@ -36,8 +36,9 @@ def dump_db():
 def dvc_track():
     # dvc add делает .dvc-файлы и заносит сами артефакты в dvc-кэш
     sh(["dvc", "add", str(DUMP_PATH), "photos"])
-    # коммитим .dvc-файлы и .gitignore-обновления в git
-    sh(["git", "add", f"{DUMP_PATH}.dvc", "photos.dvc", "data/.gitignore", ".gitignore"])
+    # коммитим метафайлы dvc и любые служебные .gitignore которые мог создать сам dvc
+    # data/ добавляем как директорию: туда мог попасть data/.gitignore, мог не попасть
+    sh(["git", "add", f"{DUMP_PATH}.dvc", "photos.dvc", "data", ".gitignore"])
     msg = f"dvc snapshot {datetime.utcnow().isoformat(timespec='seconds')}Z"
     # commit может упасть если нечего коммитить, это нормально
     subprocess.run(["git", "commit", "-m", msg])

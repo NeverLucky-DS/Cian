@@ -106,10 +106,16 @@ def run(limit=None, headless=False, sleep_min=2.0, sleep_max=5.0):
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=headless)
-            page = browser.new_page(viewport={"width": 1920, "height": 1080})
-            page.add_init_script(
+            ctx = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+                locale="ru-RU",
+                timezone_id="Europe/Moscow",
+            )
+            ctx.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
             )
+            page = ctx.new_page()
 
             for i, t in enumerate(targets, 1):
                 print(f"[offer] {i}/{len(targets)} cian_id={t.cian_id}")
