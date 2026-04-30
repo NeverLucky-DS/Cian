@@ -10,7 +10,7 @@ from sqlalchemy import select, desc, func, or_
 
 from db.db import SessionLocal
 from db.models import Offer, OfferPhoto
-
+#файл для просмотра результатов
 
 app = Flask(__name__)
 PER_PAGE = 30
