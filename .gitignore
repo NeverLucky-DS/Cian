@@ -17,3 +17,4 @@ data/cian.sql.gz
 dumps/*.json
 dumps/*.html
 /photos
+photos.zip
