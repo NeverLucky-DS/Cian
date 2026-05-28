@@ -2,6 +2,12 @@
 
 Парсер объявлений недвижимости Cian.ru с ML-моделями оценки цены и luxury-скоринга.
 
+## 🌐 Live Demo
+
+**→ [cian-viewer-shallbe.zocomputer.io](https://cian-viewer-shallbe.zocomputer.io)**
+
+Публичный viewer с 976 объявлениями, 2 964 фотографиями и ML-оценками — задеплоен на [Zo Computer](https://zocomputer.com).
+
 ## Возможности
 
 - **Парсинг**: JSON-парсинг страниц листинга и карточек (Playwright)
@@ -95,19 +101,23 @@ uv run python main.py luxury-process --input data/warehouse/offers.parquet --out
 
 ## Viewer
 
-Запуск Flask-приложения:
+Запуск локально:
 ```bash
 uv run python viewer.py
+# или с кастомным портом:
+HOST=0.0.0.0 PORT=8080 uv run python viewer.py
 ```
 
-Открой `http://127.0.0.1:5005`
+**Live-версия**: [https://cian-viewer-shallbe.zocomputer.io](https://cian-viewer-shallbe.zocomputer.io)
 
 **Функции viewer**:
+- Фото-карточки: 2 964 WebP-фото (≈3 на объявление), цена поверх фото
 - Фильтры: поиск, комнаты, цена, новостройки/вторичка
-- Сортировка: лучшая скидка (по умолчанию), новые, цена, м²
-- Карточки: цена, предсказание модели, скидка %, luxury-баллы
-- Детальная страница: все поля, фото галерея
+- Сортировка: лучшая скидка (по умолчанию), новые, цена ↑↓, м²
+- ML-бейджи: предсказание CatBoost, скидка % vs модель
+- Luxury-gauge: визуальные шкалы оценки роскошности (текст + фото)
 - График распределения luxury-оценок (μ, σ)
+- Детальная страница: галерея с thumbnail-переключателем, sticky price card, 16 характеристик
 
 ## ML Pipeline
 
