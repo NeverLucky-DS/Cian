@@ -2,14 +2,9 @@
 
 End-to-end pipeline: парсинг Cian.ru → PostgreSQL → CatBoost (цена) → Mistral (luxury) → веб-viewer.
 
-**Live demo:** [cian-viewer-shallbe.zocomputer.io](https://cian-viewer-shallbe.zocomputer.io)  
-976 объявлений, 2964 фото, ML-оценки.
-
----
-
 ## Зачем этот проект (data / ML backend)
 
-Демонстрация полного data pipeline с публичным demo — можно открыть на собеседовании в браузере.
+Демонстрация полного data pipeline: парсинг, БД, ML, viewer — запуск локально через CLI и `viewer.py`.
 
 | Навык | Реализация |
 |-------|------------|
@@ -52,7 +47,7 @@ uv run python viewer.py
 
 | Файл | Что снять |
 |------|-----------|
-| `viewer.png` | главная live demo (фильтры, карточки) |
+| `viewer.png` | главная страница viewer (локальный запуск) |
 | `luxury-chart.png` | распределение luxury-оценок |
 | `pipeline-cli.png` | вывод `main.py pipeline` в терминале |
 
@@ -66,6 +61,6 @@ uv run python viewer.py
 parser/   — Playwright, extract
 db/       — Postgres models
 ml/       — CatBoost, Mistral luxury
-viewer.py — Flask UI (deployed)
+viewer.py — Flask UI
 main.py   — CLI (9 subcommands)
 ```
