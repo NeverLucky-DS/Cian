@@ -17,6 +17,7 @@ dependencies = [
     "pyarrow>=15.0",
     "catboost>=1.2",
     "scikit-learn>=1.5",
+    "waitress>=3.0.2",
 ]
 
 [dependency-groups]
