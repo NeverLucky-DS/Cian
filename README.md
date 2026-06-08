@@ -1,31 +1,10 @@
 # Cian Real Estate Intelligence
 
-End-to-end **ML-пайплайн** для аналитики недвижимости: Playwright ETL → PostgreSQL → **CatBoost** (оценка цены, MAPE ~30%) → **Mistral** luxury scoring → веб-viewer со скидкой относительно модели.
+End-to-end **ML-пайплайн** недвижимости: Playwright ETL → PostgreSQL → **CatBoost** (цена, MAPE ~30%) → **Mistral** luxury scoring → viewer со скидкой относительно модели.
 
 **Репо:** https://github.com/NeverLucky-DS/Cian
 
-| Направление | Реализация |
-|-------------|------------|
-| ML | CatBoost регрессия, train/inference, сравнение с рыночной ценой |
-| LLM | Mistral batch — luxury-скоринг текстов объявлений |
-| Данные | PostgreSQL, SQLAlchemy, JSONB, Parquet export, DVC |
-| ETL | Playwright-парсинг, async загрузка фото |
-| Тесты | pytest — 15 тестов (`tests/`) |
-| Web | Flask viewer: фильтры, карточки, гистограмма скорингов |
-
--------|------------|
-| Python | CLI (`main.py`), парсер, ML-модули, viewer |
-| PostgreSQL | SQLAlchemy 2.0, модели `Offer` / `OfferPhoto` / `ScrapeRun`, JSONB |
-| Тесты | pytest — 15 тестов (`tests/`) |
-| LLM / агенты | Mistral batch API — luxury-скоринг описаний |
-| Async Python | `asyncio` + `httpx` + semaphore — параллельная загрузка фото |
-| REST / Web | Flask viewer: список, фильтры, карточка, раздача фото |
-| Docker | `docker compose up` — PostgreSQL 16 |
-| Git | DVC-снапшоты данных, история в `changes/` |
-
-> **FastAPI:** в текущей версии web-слой на Flask (SSR). REST JSON можно добавить поверх тех же SQLAlchemy-моделей — логичный следующий шаг.
-
----
+**Стек:** CatBoost · Mistral · PostgreSQL · Playwright · Flask viewer · DVC · pytest (15)
 
 ## Демонстрация
 
