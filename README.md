@@ -1,172 +1,108 @@
-# Cian Real Estate Parser & ML Pipeline
+# Cian Real Estate Intelligence
 
-Парсер объявлений недвижимости Cian.ru с ML-моделями оценки цены и luxury-скоринга.
+Парсер объявлений Cian.ru для аналитиков недвижимости: сбор данных в PostgreSQL, ML-оценка цены (CatBoost), luxury-скоринг через Mistral AI и веб-viewer с фильтрами и сортировкой по «скидке» относительно модели.
 
-## Возможности
+**Репо:** https://github.com/NeverLucky-DS/Cian
 
-- **Парсинг**: JSON-парсинг страниц листинга и карточек (Playwright)
-- **Хранение**: Postgres + экспорт в Parquet/CSV
-- **ML**: CatBoost модель предсказания цены (MAPE ~30%)
-- **Luxury-скоринг**: Оценка роскошности через Mistral AI (текст) + synthetic (фото)
-- **Viewer**: Flask-приложение с фильтрами, сортировкой по скидкам, визуализацией распределения luxury-оценок
+Pet-проект уровня production-prototype: ETL-пайплайн, реляционное хранилище, LLM-batch scoring, ML inference.
 
-## Структура
+| Навык | Реализация |
+|-------|------------|
+| Python | CLI (`main.py`), парсер, ML-модули, viewer |
+| PostgreSQL | SQLAlchemy 2.0, модели `Offer` / `OfferPhoto` / `ScrapeRun`, JSONB |
+| Тесты | pytest — 15 тестов (`tests/`) |
+| LLM / агенты | Mistral batch API — luxury-скоринг описаний |
+| Async Python | `asyncio` + `httpx` + semaphore — параллельная загрузка фото |
+| REST / Web | Flask viewer: список, фильтры, карточка, раздача фото |
+| Docker | `docker compose up` — PostgreSQL 16 |
+| Git | DVC-снапшоты данных, история в `changes/` |
 
-```
-Cian/
-├── main.py              # CLI entry point
-├── viewer.py            # Flask viewer
-├── parser/              # Парсинг (JSON extraction, Playwright)
-├── db/                  # Postgres models & session
-├── ml/                  # CatBoost + Mistral luxury scoring
-├── data/                # Data exports & ML datasets
-├── models/              # Trained models
-├── photos/              # Downloaded WebP photos
-├── changes/             # Changelog (change_*.md)
-└── README.md
-```
+> **FastAPI:** в текущей версии web-слой на Flask (SSR). REST JSON можно добавить поверх тех же SQLAlchemy-моделей — логичный следующий шаг.
 
-## Установка
+---
 
-1. **Postgres** (локально или docker):
-   ```bash
-   docker run -d --name cian-pg -p 5432:5432 \
-     -e POSTGRES_USER=cian -e POSTGRES_PASSWORD=cian -e POSTGRES_DB=cian \
-     postgres:16
-   ```
+## Демонстрация
 
-2. **Python deps**:
-   ```bash
-   uv sync
-   ```
+### Каталог объявлений
 
-3. **Env**:
-   ```bash
-   cp .env.example .env
-   # Если нужно, поправь DATABASE_URL в .env
-   ```
+Сетка карточек, фильтры, сортировка по лучшей скидке относительно CatBoost. Гистограмма luxury-оценок (μ, σ) на главной.
 
-4. **Инициализация БД**:
-   ```bash
-   uv run python main.py init-db
-   ```
+![Каталог — карточки с ценой, скидкой, luxury-баллами и графиком](screenshots/catalog_list.png)
 
-## CLI команды
+### Сортировка и фильтры
 
-### Парсинг
+976 объявлений в БД, пагинация, сортировка по площади — видны mid-range лоты с предсказанием модели.
+
+![Каталог — сортировка по м², сравнение цены с моделью](screenshots/catalog_sort_m2.png)
+
+### Карточка объявления
+
+Детальная страница: галерея фото, все поля из БД, сравнение цены с моделью, luxury-баллы от Mistral.
+
+![Детальная карточка — галерея, sidebar, описание](screenshots/offer_detail.png)
+
+---
+
+## Быстрый старт
 
 ```bash
-# Полный пайплайн: listing -> offers -> photos -> DVC snapshot
-uv run python main.py pipeline --pages 36 --headless
+# 1. PostgreSQL
+docker compose up -d
 
-# По отдельности
-uv run python main.py listing --url "https://cian.ru/..." --pages 2
-uv run python main.py offers --limit 100
-uv run python main.py photos --limit 500
-```
+# 2. Зависимости
+uv sync
 
-### Экспорт данных
+# 3. Env
+cp .env.example .env
 
-```bash
-# Экспорт из Postgres в CSV/Parquet + сборка Kaggle-датасета
-uv run python main.py export --out data/warehouse --ml data/ml/kaggle_dataset.parquet
-```
+# 4. Данные (DVC) + восстановление БД
+uv run dvc pull
+gunzip -c data/cian.sql.gz | docker exec -i cian-pg psql -U cian -d cian
 
-### ML (CatBoost)
-
-```bash
-# Обучение модели
-uv run python main.py catboost-train --dataset data/ml/kaggle_dataset.parquet --model models/catboost_price.cbm
-
-# Предсказание цен
-uv run python main.py catboost-predict --dataset data/ml/kaggle_dataset.parquet --model models/catboost_price.cbm --out data/ml/predictions.csv
-```
-
-### Luxury-скоринг (Mistral AI)
-
-```bash
-# Генерация промпта для теста
-uv run python main.py luxury-prompt --limit 5
-
-# Полная обработка датасета через Mistral
-export MISTRAL_API_KEY="your_key"
-uv run python main.py luxury-process --input data/warehouse/offers.parquet --output data/warehouse/offers_luxury.parquet --batch 5
-```
-
-## Viewer
-
-Запуск Flask-приложения:
-```bash
+# 5. Viewer
 uv run python viewer.py
+# → http://127.0.0.1:5005
 ```
 
-Открой `http://127.0.0.1:5005`
+Полный парсинг с нуля: `uv run playwright install chromium` → `uv run python main.py pipeline --pages 2 --headless`.
 
-**Функции viewer**:
-- Фильтры: поиск, комнаты, цена, новостройки/вторичка
-- Сортировка: лучшая скидка (по умолчанию), новые, цена, м²
-- Карточки: цена, предсказание модели, скидка %, luxury-баллы
-- Детальная страница: все поля, фото галерея
-- График распределения luxury-оценок (μ, σ)
+Для luxury-скоринга: `export MISTRAL_API_KEY=...` и `uv run python main.py luxury-process`.
 
-## ML Pipeline
+---
 
-### Датасеты
+## Архитектура
 
-- `data/warehouse/offers.parquet` — сырой экспорт из Postgres
-- `data/ml/kaggle_dataset.parquet` — ML-ready (categorical features + luxury scores)
-- `data/ml/luxury_scores.parquet` — luxury-оценки (cian_id, luxury_description, luxury_photo, luxury_reason)
-- `data/ml/predictions.csv` — предсказанные цены CatBoost
+```
+Cian.ru (JSON + Playwright)
+        ↓  listing / offers / photos
+   PostgreSQL (offers, photos, scrape_runs)
+        ↓  export
+   Parquet warehouse → CatBoost (цена) + Mistral (luxury)
+        ↓
+   Flask viewer (фильтры, скидки, график luxury)
+```
 
-### CatBoost модель
+**Структура:** `parser/` — ETL, `db/` — ORM, `ml/` — CatBoost + Mistral, `data/` — экспорт, `viewer.py` — UI.
 
-**Параметры**:
-- `depth=6`, `learning_rate=0.08`, `iterations=1200`
-- `loss_function=MAPE`
-- Категориальные фичи: district, metro_name, building_material, decoration, jk_name
+---
 
-**Метрика**: MAPE ~30% на validation
+## Тесты
 
-### Luxury-скоринг
+```bash
+uv sync --dev
+uv run pytest -v
+```
 
-- **Текст**: Mistral AI batch processing (оценка описания по критериям)
-- **Фото**: Synthetic score (коррелирует с текстом, меньшая дисперсия)
-- **Распределение**: Normal(μ=65, σ≈3.1) — близко к целевому (variance=10)
+Покрыто: парсинг JSON → row mapping, luxury-промпт, Mistral client (mock httpx), расчёт скидки viewer. Без внешних API и без живой БД.
 
-## Kaggle
+---
 
-Для обучения на Kaggle:
+## CLI (основные команды)
 
-1. Забери `data/ml/kaggle_dataset.parquet`
-2. Загрузи как Kaggle Dataset
-3. В ноутбуке:
-   ```python
-   import pandas as pd
-   from catboost import CatBoostRegressor
-   df = pd.read_parquet('kaggle_dataset.parquet')
-   # ... train model
-   ```
-
-## Changelog
-
-История изменений в папке `changes/` (change_1.md ... change_9.md).
-
-## Зависимости
-
-- `sqlalchemy>=2.0`, `psycopg[binary]>=3.2` — Postgres
-- `playwright>=1.40` — браузерная автоматизация
-- `httpx>=0.27` — HTTP клиент
-- `pillow>=10.4` — обработка фото
-- `catboost>=1.2` — ML модель
-- `pandas`, `pyarrow` — data processing
-- `flask` — viewer
-
-## Troubleshooting
-
-**Parquet reading error**: Пересоздай через `uv run python main.py export`
-
-**Missing luxury scores**: Запусти `uv run python main.py luxury-process`
-
-**CatBoost training error**: Проверь наличие `data/ml/kaggle_dataset.parquet`
-
-**Viewer not showing predictions**: Запусти `uv run python main.py catboost-predict`
+| Команда | Назначение |
+|---------|------------|
+| `init-db` | Создать таблицы |
+| `pipeline --pages N` | Полный прогон парсера |
+| `export` | Postgres → Parquet/CSV |
+| `catboost-train` / `catboost-predict` | Обучение и inference |
+| `luxury-process` | Batch luxury через Mistral |
