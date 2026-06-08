@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    container_name: cian-pg
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: cian
+      POSTGRES_PASSWORD: cian
+      POSTGRES_DB: cian
+    volumes:
+      - cian_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cian -d cian"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cian_pg_data:
