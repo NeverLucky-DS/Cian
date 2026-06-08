@@ -1,13 +1,19 @@
 # Cian Real Estate Intelligence
 
-Парсер объявлений Cian.ru для аналитиков недвижимости: сбор данных в PostgreSQL, ML-оценка цены (CatBoost), luxury-скоринг через Mistral AI и веб-viewer с фильтрами и сортировкой по «скидке» относительно модели.
+End-to-end **ML-пайплайн** для аналитики недвижимости: Playwright ETL → PostgreSQL → **CatBoost** (оценка цены, MAPE ~30%) → **Mistral** luxury scoring → веб-viewer со скидкой относительно модели.
 
 **Репо:** https://github.com/NeverLucky-DS/Cian
 
-Pet-проект уровня production-prototype: ETL-пайплайн, реляционное хранилище, LLM-batch scoring, ML inference.
+| Направление | Реализация |
+|-------------|------------|
+| ML | CatBoost регрессия, train/inference, сравнение с рыночной ценой |
+| LLM | Mistral batch — luxury-скоринг текстов объявлений |
+| Данные | PostgreSQL, SQLAlchemy, JSONB, Parquet export, DVC |
+| ETL | Playwright-парсинг, async загрузка фото |
+| Тесты | pytest — 15 тестов (`tests/`) |
+| Web | Flask viewer: фильтры, карточки, гистограмма скорингов |
 
-| Навык | Реализация |
-|-------|------------|
+-------|------------|
 | Python | CLI (`main.py`), парсер, ML-модули, viewer |
 | PostgreSQL | SQLAlchemy 2.0, модели `Offer` / `OfferPhoto` / `ScrapeRun`, JSONB |
 | Тесты | pytest — 15 тестов (`tests/`) |
